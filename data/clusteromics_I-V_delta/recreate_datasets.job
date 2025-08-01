@@ -1,0 +1,305 @@
+#!/bin/bash
+# This script generates the datasets for the clusteromics I-V experiment
+
+run_cmd() {
+if [ "$DEBUG" = true ]; then
+        echo "$@"
+    else
+        "$@"
+    fi
+}
+
+# DATA PREPROCESSING
+
+SOURCE_DIR="/home/kubeckaj/ACDB/Articles/knattrup23_multiacid_multibase"
+DATA_DIR="/home/seplauri/clusters2025/data/clusteromics_I-V_delta"
+DB_STEMS=("clusteromics_I" "clusteromics_II" "clusteromics_III" "clusteromics_IV" "clusteromics_V")
+NUM_FOLDS=5
+HYPERTRAIN_SIZE=5000
+N_VALUES=()
+REPRESENTATIONS=()
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in 
+        --cv-folds) NUM_FOLDS="$2"; shift;;
+        -n) DEBUG=true;;
+        -s|--samples)
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                N_VALUES+=("$1")
+                shift
+            done;;
+        --help) echo "Usage: exp_knn_learning_curve.sh --db <path_to_db> [-m <path_to_monomers>] --k <folds> --cpu <num_cpus> -p <partition> [-s|--samples] <sample counts> [-n]"; exit 0 ;;
+        *) echo "Unknown option: $1"; exit 1;;
+    esac
+    shift
+done
+
+if [[ ${#N_VALUES[@]} -eq 0 ]]; then
+    N_VALUES=(100 500 1000 5000 10000 15000 25000)
+fi
+
+declare -A theory_map
+theory_map["high"]="r2SCAN-3c"
+theory_map["low"]="GFN1-xTB"
+
+# # combine datasets and copy to current folder
+# for stem in "${DB_STEMS[@]}"; do
+#     for suffix in "high" "low" ; do
+# 		DB_PATH="$DATA_DIR/${stem}_${suffix}.pkl"
+# 		run_cmd JKQC "$SOURCE_DIR/${stem}/${theory_map[$suffix]}/database_s1.pkl" "$SOURCE_DIR/${stem}/${theory_map[$suffix]}/database_s2.pkl" -out "$DB_PATH"
+# 		SORT_DB="$DATA_DIR/${stem}_${suffix}_sorted.pkl"
+#         SHUFFLE_DB="$DATA_DIR/${stem}_${suffix}_shuffled.pkl"
+# 		run_cmd JKQC -sort b "$DB_PATH" -out "$SORT_DB"
+#         run_cmd JKQC "$SORT_DB" -shuffle -seed 42 -out "$SHUFFLE_DB"
+# 	done
+# done
+
+# create hyperparameter DBs
+# HYPER_LOWS=()
+# HYPER_HIGS=()
+# for stem in "${DB_STEMS[@]}"; do
+#     for suffix in "high" "low" ; do
+#         SHUFFLE_DB="$DATA_DIR/${stem}_${suffix}_shuffled2.pkl"
+#  		SORT_DB="$DATA_DIR/${stem}_${suffix}_sorted.pkl"
+# 	    run_cmd JKQC "$SORT_DB" -shuffle -seed 43 -out "$SHUFFLE_DB"
+# 	    run_cmd JKQC "$SHUFFLE_DB" -index 0:1000 -out "$SHUFFLE_DB"
+# 		if [[ "$suffix" == "high" ]]; then
+# 			HYPER_HIGHS+=($SHUFFLE_DB)
+# 		else
+# 			HYPER_LOWS+=($SHUFFLE_DB)
+# 		fi
+#     done
+# done
+# # combine the chunks
+# run_cmd JKQC ${HYPER_HIGHS[@]} -out "$DATA_DIR/db_hyper_high.pkl"
+# run_cmd JKQC ${HYPER_LOWS[@]} -out "$DATA_DIR/db_hyper_low.pkl"
+# run_cmd rm ${HYPER_HIGHS[@]}
+# run_cmd rm ${HYPER_LOWS[@]}
+
+# # copy over monomer files; also sort them to make sure they align
+# run_cmd JKQC -sort b "$SOURCE_DIR/Additional_files/monomers_${theory_map["high"]}.pkl" -out "$DATA_DIR/monomer_high.pkl"
+# run_cmd JKQC -sort b "$SOURCE_DIR/Additional_files/monomers_${theory_map["low"]}.pkl" -out "$DATA_DIR/monomer_low.pkl"
+# 
+# for stem in "${DB_STEMS[@]}"; do
+#     for suffix in "high" "low" ; do
+# 	    SHUFFLE_DB="$DATA_DIR/${stem}_${suffix}_shuffled.pkl"
+# 	    NUM_ROWS=$(JKQC "$SHUFFLE_DB" -info | grep "RangeIndex:" | awk '{print $2}')
+# 	    # calculate chunk size
+# 	    START=0
+# 	    END=$NUM_ROWS
+# 	    CHUNK_SIZE=$(( (END - START + 1) / NUM_FOLDS ))
+# 	    FOLD_SIZE=$(( NUM_ROWS - CHUNK_SIZE ))
+# 	    # save chunks
+# 	    for ((i=0; i<NUM_FOLDS; i++)); do
+# 			FOLD_DB="$DATA_DIR/${stem}_${suffix}_${i}.pkl"
+# 			if [[ -e "$FOLD_DB" ]]; then
+# 				continue
+# 			fi
+# 	        CHUNK_START=$(( START + i * CHUNK_SIZE))
+# 	        CHUNK_END=$(( CHUNK_START + CHUNK_SIZE - 1 ))
+# 	
+# 	        if (( i == NUM_FOLDS-1 )); then
+# 	            CHUNK_END=$END
+# 	        fi
+# 	
+# 	        echo "CHUNK $((i+1)): rows $CHUNK_START to $CHUNK_END"
+# 	        if (( i == 0 )); then
+# 	            run_cmd JKQC "$SHUFFLE_DB" -index $((CHUNK_END+1)):$((NUM_ROWS)) -out "$FOLD_DB" 
+# 	        elif (( i == NUM_FOLDS-1 )); then
+# 	            run_cmd JKQC "$SHUFFLE_DB" -index 0:$((CHUNK_START-1)) -out "$FOLD_DB"
+# 	        else
+# 	            # create two halves (before and after omitted fold)
+# 	            run_cmd JKQC "$SHUFFLE_DB" -index 0:$((CHUNK_START-1)) -out "$DATA_DIR/${stem}_${suffix}_${i}_1.pkl"
+# 	            run_cmd JKQC "$SHUFFLE_DB" -index $((CHUNK_END+1)):$((NUM_ROWS)) -out "$DATA_DIR/${stem}_${suffix}_${i}_2.pkl" 
+# 	            # combine halves
+# 	            run_cmd JKQC "$DATA_DIR/${stem}_${suffix}_${i}_1.pkl" "$DATA_DIR/${stem}_${suffix}_${i}_2.pkl" -out "$FOLD_DB"
+# 	            # remove halved folds
+# 	            run_cmd rm "$DATA_DIR/${stem}_${suffix}_${i}_1.pkl"
+# 	            run_cmd rm "$DATA_DIR/${stem}_${suffix}_${i}_2.pkl"
+# 	        fi
+# 	
+# 	        # save different sized training copies for each fold
+# 	        for n_samples in "${N_VALUES[@]}"; do
+# 	            if (( n_samples > FOLD_SIZE )); then
+# 	                echo "Size of training set larger than CV fold size ($n_samples > $FOLD_SIZE). Skipping the rest."
+# 	                break
+# 	            fi
+# 	            run_cmd JKQC "$DATA_DIR/${stem}_${suffix}_${i}.pkl" -index 0:$n_samples -out "$DATA_DIR/${stem}_${suffix}_${i}_${n_samples}.pkl"
+# 	        done
+# 	
+# 	        # save the remaining fold as test data
+# 	        run_cmd JKQC "$SHUFFLE_DB" -index $CHUNK_START:$CHUNK_END -out "$DATA_DIR/${stem}_${suffix}_test${i}.pkl"
+# 	
+# 	    done
+# 	done
+# done
+# 
+
+# also generate the full clusteromics files
+N_VALUES=(100 500 1000 5000 10000 15000 25000 50000 100000 150000)
+
+# HIGH_FILES=()
+# LOW_FILES=()
+# for stem in "${DB_STEMS[@]}"; do
+# 	HIGH_FILES+=("$DATA_DIR/${stem}_high.pkl")
+# 	LOW_FILES+=("$DATA_DIR/${stem}_low.pkl")
+# done
+# HIGH_JOINED="${HIGH_FILES[*]}"
+# LOW_JOINED="${LOW_FILES[*]}"
+# run_cmd JKQC "$HIGH_JOINED" -out "$DATA_DIR/clusteromics_full_high.pkl"
+# run_cmd JKQC -sort b "$DATA_DIR/clusteromics_full_high.pkl" -out "$DATA_DIR/clusteromics_full_high_sorted.pkl"
+# run_cmd JKQC "$DATA_DIR/clusteromics_full_high_sorted.pkl" -shuffle -seed 42 -out "$DATA_DIR/clusteromics_full_high_shuffled.pkl"
+# run_cmd JKQC "$LOW_JOINED" -out "$DATA_DIR/clusteromics_full_low.pkl"
+# run_cmd JKQC -sort b "$DATA_DIR/clusteromics_full_low.pkl" -out "$DATA_DIR/clusteromics_full_low_sorted.pkl"
+# run_cmd JKQC "$DATA_DIR/clusteromics_full_low_sorted.pkl" -shuffle -seed 42 -out "$DATA_DIR/clusteromics_full_low_shuffled.pkl"
+for suffix in "high" "low" ; do
+  SHUFFLE_DB="$DATA_DIR/clusteromics_full_${suffix}_shuffled.pkl"
+  NUM_ROWS=$(JKQC "$SHUFFLE_DB" -info | grep "RangeIndex:" | awk '{print $2}')
+  # calculate chunk size
+  START=0
+  END=$NUM_ROWS
+  CHUNK_SIZE=$(( (END - START + 1) / NUM_FOLDS ))
+  FOLD_SIZE=$(( NUM_ROWS - CHUNK_SIZE ))
+  TEST_SIZE=5000
+  # save chunks
+  for ((i=0; i<NUM_FOLDS; i++)); do
+  	FOLD_DB="$DATA_DIR/clusteromics_full_${suffix}_${i}.pkl"
+#   	if [[ -e "$FOLD_DB" ]]; then
+#   		continue
+#   	fi
+      CHUNK_START=$(( START + i * CHUNK_SIZE))
+      CHUNK_END=$(( CHUNK_START + CHUNK_SIZE - 1 ))
+
+      if (( i == NUM_FOLDS-1 )); then
+          CHUNK_END=$END
+      fi
+
+      echo "CHUNK $((i+1)): rows $CHUNK_START to $CHUNK_END"
+      if (( i == 0 )); then
+          run_cmd JKQC "$SHUFFLE_DB" -index $((CHUNK_END+1)):$((NUM_ROWS)) -out "$FOLD_DB" 
+      elif (( i == NUM_FOLDS-1 )); then
+          run_cmd JKQC "$SHUFFLE_DB" -index 0:$((CHUNK_START-1)) -out "$FOLD_DB"
+      else
+          # create two halves (before and after omitted fold)
+          run_cmd JKQC "$SHUFFLE_DB" -index 0:$((CHUNK_START-1)) -out "$DATA_DIR/clusteromics_full_${suffix}_${i}_1.pkl"
+          run_cmd JKQC "$SHUFFLE_DB" -index $((CHUNK_END+1)):$((NUM_ROWS)) -out "$DATA_DIR/clusteromics_full_${suffix}_${i}_2.pkl" 
+          # combine halves
+          run_cmd JKQC "$DATA_DIR/clusteromics_full_${suffix}_${i}_1.pkl" "$DATA_DIR/clusteromics_full_${suffix}_${i}_2.pkl" -out "$FOLD_DB"
+          # remove halved folds
+          run_cmd rm "$DATA_DIR/clusteromics_full_${suffix}_${i}_1.pkl"
+          run_cmd rm "$DATA_DIR/clusteromics_full_${suffix}_${i}_2.pkl"
+      fi
+
+      # save different sized training copies for each fold
+      for n_samples in "${N_VALUES[@]}"; do
+          if (( n_samples > FOLD_SIZE )); then
+              echo "Size of training set larger than CV fold size ($n_samples > $FOLD_SIZE). Skipping the rest."
+              break
+          fi
+          run_cmd JKQC "$DATA_DIR/clusteromics_full_${suffix}_${i}.pkl" -index 0:$n_samples -out "$DATA_DIR/clusteromics_full_${suffix}_${i}_${n_samples}.pkl"
+      done
+
+      # save the remaining fold as test data
+      run_cmd JKQC "$SHUFFLE_DB" -index $CHUNK_START:$(( CHUNK_START+TEST_SIZE  )) -out "$DATA_DIR/clusteromics_full_${suffix}_test${i}.pkl"
+
+  done
+done
+# 
+# finally, generate the extrapolation files
+# N_VALUES=(100 500 1000 5000 10000 15000 25000 50000)
+# 
+# HIGH_FILES=()
+# LOW_FILES=()
+# for stem in "${DB_STEMS[@]}"; do
+#     if [[ "$stem" != "clusteromics_V" ]]; then
+# 	    HIGH_FILES+=("$DATA_DIR/${stem}_high.pkl")
+# 	    LOW_FILES+=("$DATA_DIR/${stem}_low.pkl")
+#     fi
+# done
+# HIGH_JOINED="${HIGH_FILES[*]}"
+# LOW_JOINED="${LOW_FILES[*]}"
+# run_cmd JKQC "$HIGH_JOINED" -out "$DATA_DIR/clusteromics_extrap_high.pkl"
+# run_cmd JKQC -sort b "$DATA_DIR/clusteromics_extrap_high.pkl" -out "$DATA_DIR/clusteromics_extrap_high_sorted.pkl"
+# run_cmd JKQC "$DATA_DIR/clusteromics_extrap_high_sorted.pkl" -shuffle -seed 42 -out "$DATA_DIR/clusteromics_extrap_high_shuffled.pkl"
+# run_cmd JKQC "$LOW_JOINED" -out "$DATA_DIR/clusteromics_extrap_low.pkl"
+# run_cmd JKQC -sort b "$DATA_DIR/clusteromics_extrap_low.pkl" -out "$DATA_DIR/clusteromics_extrap_low_sorted.pkl"
+# run_cmd JKQC "$DATA_DIR/clusteromics_extrap_low_sorted.pkl" -shuffle -seed 42 -out "$DATA_DIR/clusteromics_extrap_low_shuffled.pkl"
+# # create folds of train data
+# for suffix in "high" "low" ; do
+#   SHUFFLE_DB="$DATA_DIR/clusteromics_extrap_${suffix}_shuffled.pkl"
+#   NUM_ROWS=$(JKQC "$SHUFFLE_DB" -info | grep "RangeIndex:" | awk '{print $2}')
+#   # calculate chunk size
+#   START=0
+#   END=$NUM_ROWS
+#   CHUNK_SIZE=$(( (END - START + 1) / NUM_FOLDS ))
+#   FOLD_SIZE=$(( NUM_ROWS - CHUNK_SIZE ))
+#   TEST_SIZE=5000
+#   # save chunks
+#   for ((i=0; i<NUM_FOLDS; i++)); do
+#   	FOLD_DB="$DATA_DIR/clusteromics_extrap_${suffix}_${i}.pkl"
+#   	if [[ -e "$FOLD_DB" ]]; then
+#   		continue
+#   	fi
+#       CHUNK_START=$(( START + i * CHUNK_SIZE))
+#       CHUNK_END=$(( CHUNK_START + CHUNK_SIZE - 1 ))
+# 
+#       if (( i == NUM_FOLDS-1 )); then
+#           CHUNK_END=$END
+#       fi
+# 
+#       echo "CHUNK $((i+1)): rows $CHUNK_START to $CHUNK_END"
+#       if (( i == 0 )); then
+#           run_cmd JKQC "$SHUFFLE_DB" -index $((CHUNK_END+1)):$((NUM_ROWS)) -out "$FOLD_DB" 
+#       elif (( i == NUM_FOLDS-1 )); then
+#           run_cmd JKQC "$SHUFFLE_DB" -index 0:$((CHUNK_START-1)) -out "$FOLD_DB"
+#       else
+#           # create two halves (before and after omitted fold)
+#           run_cmd JKQC "$SHUFFLE_DB" -index 0:$((CHUNK_START-1)) -out "$DATA_DIR/clusteromics_extrap_${suffix}_${i}_1.pkl"
+#           run_cmd JKQC "$SHUFFLE_DB" -index $((CHUNK_END+1)):$((NUM_ROWS)) -out "$DATA_DIR/clusteromics_extrap_${suffix}_${i}_2.pkl" 
+#           # combine halves
+#           run_cmd JKQC "$DATA_DIR/clusteromics_extrap_${suffix}_${i}_1.pkl" "$DATA_DIR/clusteromics_extrap_${suffix}_${i}_2.pkl" -out "$FOLD_DB"
+#           # remove halved folds
+#           run_cmd rm "$DATA_DIR/clusteromics_extrap_${suffix}_${i}_1.pkl"
+#           run_cmd rm "$DATA_DIR/clusteromics_extrap_${suffix}_${i}_2.pkl"
+#       fi
+# 
+#       # save different sized training copies for each fold
+#       for n_samples in "${N_VALUES[@]}"; do
+#           if (( n_samples > FOLD_SIZE )); then
+#               echo "Size of training set larger than CV fold size ($n_samples > $FOLD_SIZE). Skipping the rest."
+#               break
+#           fi
+#           run_cmd JKQC "$DATA_DIR/clusteromics_extrap_${suffix}_${i}.pkl" -index 0:$n_samples -out "$DATA_DIR/clusteromics_extrap_${suffix}_${i}_${n_samples}.pkl"
+#       done
+#   done
+# done
+
+# generate test sets
+# N_TEST=5000
+# TEST_HI="$DATA_DIR/clusteromics_V_high.pkl"
+# TEST_LO="$DATA_DIR/clusteromics_V_low.pkl"
+# 
+# run_cmd JKQC -sort b "$TEST_HI" -out "$DATA_DIR/clusteromics_extrap_test_high.pkl"
+# run_cmd JKQC "$DATA_DIR/clusteromics_extrap_test_high.pkl" -shuffle -seed 42 -out "$DATA_DIR/clusteromics_extrap_test_high_shuffled.pkl"
+# run_cmd JKQC -sort b "$TEST_LO" -out "$DATA_DIR/clusteromics_extrap_test_low.pkl"
+# run_cmd JKQC "$DATA_DIR/clusteromics_extrap_test_low.pkl" -shuffle -seed 42 -out "$DATA_DIR/clusteromics_extrap_test_low_shuffled.pkl"
+# 
+# for suffix in "high" "low" ; do
+#   SHUFFLE_DB="$DATA_DIR/clusteromics_extrap_test_${suffix}_shuffled.pkl"
+#   NUM_ROWS=$(JKQC "$SHUFFLE_DB" -info | grep "RangeIndex:" | awk '{print $2}')
+#   if (( NUM_ROWS < N_FOLDS * N_TEST )); then 
+#     echo "Not enough test points; quitting!"
+#     break
+#   fi
+#   
+#     for ((i=0; i<NUM_FOLDS; i++)); do
+#       CHUNK_START=$(( START + i * N_TEST))
+#       CHUNK_END=$(( CHUNK_START + N_TEST - 1 ))
+#         
+#   	    FOLD_DB="$DATA_DIR/clusteromics_extrap_test_${suffix}_${i}.pkl"
+# 
+#           echo "CHUNK $((i+1)): rows $CHUNK_START to $CHUNK_END"
+#           run_cmd JKQC "$SHUFFLE_DB" -index $((CHUNK_START)):$((CHUNK_END)) -out "$FOLD_DB" 
+#     done
+# done

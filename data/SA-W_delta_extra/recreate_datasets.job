@@ -1,0 +1,102 @@
+#!/bin/bash
+# This script generates the datasets for the clusteromics I-V experiment
+
+run_cmd() {
+if [ "$DEBUG" = true ]; then
+        echo "$@"
+    else
+        "$@"
+    fi
+}
+
+# DATA PREPROCESSING
+
+SOURCE_DIR="/home/kubeckaj/ACDB/Articles/kubecka24_neural_network/Databases"
+DATA_DIR="/home/seplauri/clusters2025/data/SA-W_delta_extra2"
+NUM_FOLDS=5
+HYPERTRAIN_SIZE=5000
+N_VALUES=()
+REPRESENTATIONS=()
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in 
+        --cv-folds) NUM_FOLDS="$2"; shift;;
+        -n) DEBUG=true;;
+        -s|--samples)
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                N_VALUES+=("$1")
+                shift
+            done;;
+        --help) echo "Usage: exp_knn_learning_curve.sh --db <path_to_db> [-m <path_to_monomers>] --k <folds> --cpu <num_cpus> -p <partition> [-s|--samples] <sample counts> [-n]"; exit 0 ;;
+        *) echo "Unknown option: $1"; exit 1;;
+    esac
+    shift
+done
+
+if [[ ${#N_VALUES[@]} -eq 0 ]]; then
+    N_VALUES=(100 500 1000 5000 10000 13000)
+fi
+
+declare -A theory_map
+theory_map["high"]="wB97X-D"
+theory_map["low"]="GFN1-xTB"
+
+# copy datasets to local folder; sort and shuffle
+for suffix in "high" "low" ; do
+        DB_PATH="$DATA_DIR/db_${suffix}_train.pkl"
+        MONOMER_PATH="$DATA_DIR/monomer_${suffix}.pkl"
+        run_cmd cp "$SOURCE_DIR/SA-W_18k_${theory_map[$suffix]}_withFORCES_monomers.pkl" "$MONOMER_PATH"
+        SHUFFLE_DB="$DATA_DIR/db_${suffix}_train_shuffled.pkl"
+        run_cmd JKQC "$DB_PATH" -shuffle -seed 42 -out "$SHUFFLE_DB"
+done
+
+
+for suffix in "high" "low" ; do
+    SHUFFLE_DB="$DATA_DIR/db_${suffix}_train_shuffled.pkl"
+    NUM_ROWS=$(JKQC "$SHUFFLE_DB" -info | grep "RangeIndex:" | awk '{print $2}')
+    # calculate chunk size
+    START=0
+    END=$NUM_ROWS
+    CHUNK_SIZE=$(( (END - START + 1) / NUM_FOLDS ))
+    FOLD_SIZE=$(( NUM_ROWS - CHUNK_SIZE ))
+    # save chunks
+    for ((i=0; i<NUM_FOLDS; i++)); do
+		FOLD_DB="$DATA_DIR/db_${suffix}_${i}.pkl"
+# 		if [[ -e "$FOLD_DB" ]]; then
+# 			continue
+# 		fi
+        CHUNK_START=$(( START + i * CHUNK_SIZE))
+        CHUNK_END=$(( CHUNK_START + CHUNK_SIZE - 1 ))
+
+        if (( i == NUM_FOLDS-1 )); then
+            CHUNK_END=$END
+        fi
+
+        echo "CHUNK $((i+1)): rows $CHUNK_START to $CHUNK_END"
+        if (( i == 0 )); then
+            run_cmd JKQC "$SHUFFLE_DB" -index $((CHUNK_END+1)):$((NUM_ROWS)) -out "$FOLD_DB" 
+        elif (( i == NUM_FOLDS-1 )); then
+            run_cmd JKQC "$SHUFFLE_DB" -index 0:$((CHUNK_START-1)) -out "$FOLD_DB"
+        else
+            # create two halves (before and after omitted fold)
+            run_cmd JKQC "$SHUFFLE_DB" -index 0:$((CHUNK_START-1)) -out "$DATA_DIR/db_${suffix}_${i}_1.pkl"
+            run_cmd JKQC "$SHUFFLE_DB" -index $((CHUNK_END+1)):$((NUM_ROWS)) -out "$DATA_DIR/db_${suffix}_${i}_2.pkl" 
+            # combine halves
+            run_cmd JKQC "$DATA_DIR/db_${suffix}_${i}_1.pkl" "$DATA_DIR/db_${suffix}_${i}_2.pkl" -out "$FOLD_DB"
+            # remove halved folds
+            run_cmd rm "$DATA_DIR/db_${suffix}_${i}_1.pkl"
+            run_cmd rm "$DATA_DIR/db_${suffix}_${i}_2.pkl"
+        fi
+
+        # save different sized training copies for each fold
+        for n_samples in "${N_VALUES[@]}"; do
+            if (( n_samples > FOLD_SIZE )); then
+                echo "Size of training set larger than CV fold size ($n_samples > $FOLD_SIZE). Skipping the rest."
+                break
+            fi
+            run_cmd JKQC "$DATA_DIR/db_${suffix}_${i}.pkl" -index 0:$n_samples -out "$DATA_DIR/db_${suffix}_${i}_${n_samples}.pkl"
+        done
+
+    done
+done
