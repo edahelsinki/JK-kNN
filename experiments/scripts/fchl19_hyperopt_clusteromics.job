@@ -1,0 +1,72 @@
+#!/bin/bash
+# This script runs a CV experiment for k-NN replacement
+
+run_cmd() {
+if [ "$DEBUG" = true ]; then
+        echo "$@"
+    else
+        "$@"
+    fi
+}
+
+# DATA PREPROCESSING
+DATA_DIR="/home/seplauri/clusters2025/data/clusteromics_I-V_delta"
+NUM_FOLDS=5
+CPUS=8
+PARTITION="q64,q48,q40"
+DEBUG=false
+HYPERTRAIN_SIZE=5000
+N_VALUES=()
+MONOMER_DB=""
+TIME="08:00:00"
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in 
+        --cv-folds) NUM_FOLDS="$2"; shift;;
+        --cpu) CPUS="$2"; shift;;
+        -p|--par) PARTITION="$2"; shift;;
+        -n) DEBUG=true;;
+        -s|--samples)
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                N_VALUES+=("$1")
+                shift
+            done;;
+        -r|--repr)
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                REPRESENTATIONS+=("$1")
+                shift
+            done;;
+		-m|--monomers) MONOMER_DB="$2"; shift;;
+        --help) echo "Usage: exp_knn_learning_curve.sh --db <path_to_db> [-m <path_to_monomers>] --k <folds> --cpu <num_cpus> -p <partition> [-s|--samples] <sample counts> [-n]"; exit 0 ;;
+        *) echo "Unknown option: $1"; exit 1;;
+    esac
+    shift
+done
+
+# SIGMAS=(0.5 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0)
+SIGMAS=(0.5 1.0 2.0 5.0 8.0 10.0 15.0 20.0 25.0 30.0 35.0 40.0 45.0 50.0)
+# SIGMAS=(0.5 1.0)
+LAMBDAS=("1e-1" "1e-2" "1e-3" "1e-4" "1e-5" "1e-6" "1e-7" "1e-8" "1e-9" "1e-10") 
+# LAMBDAS=("1e-1" "1e-2")
+
+RESULT_DIR=$(realpath --canonicalize-missing "/home/seplauri/clusters2025/experiments/results/fchl_hyper_clusteromics")
+mkdir -p "$RESULT_DIR"
+
+# run hyperopt
+for sigma in "${SIGMAS[@]}"; do
+    for lambda in "${LAMBDAS[@]}"; do
+ 
+    HYPER_CACHE="$RESULT_DIR/clusteromics_hyper_sigma_${sigma}_l_${lambda}.pkl"
+    if [[ ! -e "$HYPER_CACHE" ]]; then
+		TIME="04:00:00"
+        run_cmd JKML -qml -repr fchl19 -train "$RESULT_DIR/db_hyper_high.pkl" "$RESULT_DIR/db_hyper_low.pkl" -test "$RESULT_DIR/test_hyper_high.pkl" "$RESULT_DIR/test_hyper_low.pkl" -monomers "$DATA_DIR/monomer_high.pkl" "$DATA_DIR/monomer_low.pkl" -par "$PARTITION" -time "$TIME" -cpu "$CPUS" -out "$HYPER_CACHE" -noforces -sigma "$sigma" -lambda "$lambda"
+        # move to next representation
+    else
+		continue
+    fi
+
+    done
+done
+run_cmd JKML -qml -train "$RESULT_DIR/db_hyper_high.pkl" "$RESULT_DIR/db_hyper_low.pkl" -test "$RESULT_DIR/test_hyper_high.pkl" "$RESULT_DIR/test_hyper_low.pkl" -monomers "$DATA_DIR/monomer_high.pkl" "$DATA_DIR/monomer_low.pkl" -par "$PARTITION" -time 08:00:00 -cpu "$CPUS" -out "clusteromics_krr_baseline.pkl" -noforces

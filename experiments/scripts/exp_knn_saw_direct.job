@@ -1,0 +1,197 @@
+#!/bin/bash
+# This script runs a CV experiment for k-NN replacement
+
+run_cmd() {
+if [ "$DEBUG" = true ]; then
+        echo "$@"
+    else
+        "$@"
+    fi
+}
+
+# DATA PREPROCESSING
+DATA_DIR="/home/seplauri/clusters2025/data/SA-W_18k_wB97X-D_withFORCES"
+NUM_FOLDS=5
+CPUS=8
+PARTITION="q64,q48,q40"
+DEBUG=false
+HYPERTRAIN_SIZE=5000
+N_VALUES=()
+MONOMER_DB=""
+REPRESENTATIONS=()
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in 
+        --cv-folds) NUM_FOLDS="$2"; shift;;
+        --cpu) CPUS="$2"; shift;;
+        -p|--par) PARTITION="$2"; shift;;
+        -n) DEBUG=true;;
+        -s|--samples)
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                N_VALUES+=("$1")
+                shift
+            done;;
+        -r|--repr)
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                REPRESENTATIONS+=("$1")
+                shift
+            done;;
+		-m|--monomers) MONOMER_DB="$2"; shift;;
+        --help) echo "Usage: exp_knn_learning_curve.sh --db <path_to_db> [-m <path_to_monomers>] --k <folds> --cpu <num_cpus> -p <partition> [-s|--samples] <sample counts> [-n]"; exit 0 ;;
+        *) echo "Unknown option: $1"; exit 1;;
+    esac
+    shift
+done
+
+if [[ ${#N_VALUES[@]} -eq 0 ]]; then
+	N_VALUES=(100 500 1000 5000 10000 13000)
+fi
+if [[ ${#REPRESENTATIONS[@]} -eq 0 ]]; then
+    REPRESENTATIONS=("krr" "krr19" "fchl" "fchl-kernel" "mbdf" "fchl-nometric" "mbdf-nometric")
+fi
+
+RESULT_DIR=$(realpath --canonicalize-missing "/home/seplauri/clusters2025/experiments/results/SA-W_18k_wB97X-D_withFORCES")
+mkdir -p "$RESULT_DIR"
+
+# train KRR on folds
+TRAIN_KRR=false
+for repr in "${REPRESENTATIONS[@]}"; do
+    if [[ "$repr" == krr ]]; then
+		TRAIN_KRR=true
+		break
+	fi
+done
+
+for ((i=0; i<NUM_FOLDS; i++)); do
+	if [ "$TRAIN_KRR" = false ]; then
+		break
+	fi
+    for n_samples in "${N_VALUES[@]}"; do
+        KRR_MODEL_PATH="$RESULT_DIR/krr_${i}_${n_samples}.pkl" 
+        if [ -e "$KRR_MODEL_PATH" ]; then
+            echo "Found trained KRR model at $KRR_MODEL_PATH, not retraining!"
+            continue
+        fi
+
+        echo "Submit KRR job for chunk ${i} (N=$n_samples)."
+        KRR_RESULTS="$RESULT_DIR/krr_${i}_${n_samples}_trainout.pkl"
+			if ((n_samples > 5000)) ; then
+				TIME="16:00:00"
+				KRR_CPUS=16
+			else
+				TIME="08:00:00"
+				KRR_CPUS="$CPUS"
+			fi
+        run_cmd JKML -qml -train "$DATA_DIR/db_fold${i}_${n_samples}.pkl" -monomers "$DATA_DIR/db_monomer.pkl" -test "$DATA_DIR/db_test${i}.pkl" -par "$PARTITION" -time "$TIME" -cpu "$KRR_CPUS" -varsout "$KRR_MODEL_PATH" -out "$KRR_RESULTS"
+    done
+done
+
+# train FCHL19 KRR on folds
+TRAIN_KRR19=false
+for repr in "${REPRESENTATIONS[@]}"; do
+    if [[ "$repr" == krr19 ]]; then
+		TRAIN_KRR19=true
+		break
+	fi
+done
+
+for ((i=0; i<NUM_FOLDS; i++)); do
+	if [ "$TRAIN_KRR19" = false ]; then
+		break
+	fi
+    for n_samples in "${N_VALUES[@]}"; do
+        KRR_MODEL_PATH="$RESULT_DIR/krr19_${i}_${n_samples}.pkl" 
+        if [ -e "$KRR_MODEL_PATH" ]; then
+            echo "Found trained KRR model at $KRR_MODEL_PATH, not retraining!"
+            continue
+        fi
+
+        echo "Submit KRR job for chunk ${i} (N=$n_samples)."
+        KRR_RESULTS="$RESULT_DIR/krr19_${i}_${n_samples}_trainout.pkl"
+			if ((n_samples > 5000)) ; then
+				TIME="16:00:00"
+				KRR_CPUS=16
+			else
+				TIME="08:00:00"
+				KRR_CPUS="$CPUS"
+			fi
+        run_cmd JKML -qml -repr fchl19 -train "$DATA_DIR/db_fold${i}_${n_samples}.pkl" -monomers "$DATA_DIR/db_monomer.pkl" -test "$DATA_DIR/db_test${i}.pkl" -par "$PARTITION" -time "$TIME" -cpu "$KRR_CPUS" -varsout "$KRR_MODEL_PATH" -out "$KRR_RESULTS" -sigma 20 -lambda 1e-6
+    done
+done
+     
+# train KNN on folds
+for repr in "${REPRESENTATIONS[@]}"; do
+	# nometric values are handled below
+    if [[ "$repr" == *nometric* ]]; then
+		continue
+	fi
+    if [[ "$repr" == *krr* ]]; then
+		continue
+	fi
+
+ 
+    # check if hyperparameter cache exists; if not, run hyperparameter optimisation and omit future steps
+    HYPER_CACHE="$RESULT_DIR/hyper_${repr}.pkl"
+    HYPER_DB="$DATA_DIR/db_hyper.pkl"
+    if [[ ! -e "$HYPER_CACHE" ]]; then
+    	if [[ "$repr" == fchl-kernel ]]; then
+			TIME="08:00:00"
+		else
+			TIME="04:00:00"
+		fi
+        echo "Did not find a hyperparameter cache for KNN with ${repr}, running hyperparameter tuning!"
+        run_cmd JKML -knn -repr "$repr" -train "$HYPER_DB" -monomers "$DATA_DIR/db_monomer.pkl" -par "$PARTITION" -time 04:00:00 -cpu "$CPUS" -varsout "$HYPER_CACHE" -hyper -sigma 20
+        # move to next representation
+		continue
+    fi
+
+    # hyperparams existed; proceed with the training
+    for ((i=0; i<NUM_FOLDS; i++)); do
+        for n_samples in "${N_VALUES[@]}"; do
+            KNN_MODEL_PATH="$RESULT_DIR/knn_${i}_${repr}_${n_samples}.pkl"
+            if [ -e "$KNN_MODEL_PATH" ]; then
+                echo "Found trained k-NN model at $KNN_MODEL_PATH, not retraining!"
+                continue
+            fi
+            echo "Submit k-NN job for db chunk ${i} with ${repr} metric, n=${n_samples}."
+            KNN_RESULTS="$RESULT_DIR/knn_${i}_${repr}_${n_samples}_trainout.pkl"
+            run_cmd JKML -knn -repr "$repr" -train "$DATA_DIR/db_fold${i}_${n_samples}.pkl" -monomers "$DATA_DIR/db_monomer.pkl" -test "$DATA_DIR/db_test${i}.pkl" -par "$PARTITION" -time 08:00:00 -cpu "$CPUS" -varsout "$KNN_MODEL_PATH" -out "$KNN_RESULTS" -hyper-cache "$HYPER_CACHE" -sigma 20
+        done
+    done
+done
+	
+# also run for no-metric
+for repr in "${REPRESENTATIONS[@]}"; do
+	if [[ "$repr" =~ ^([a-z]+)-nometric$ ]]; then
+		repr="${BASH_REMATCH[1]}"
+	else
+		continue
+	fi
+    if [[ "$repr" == krr ]]; then
+		continue
+	fi
+	for ((i=0; i<NUM_FOLDS; i++)); do
+	
+    	# check if hyperparameter cache exists; if not, run hyperparameter optimisation and omit future steps
+    	HYPER_CACHE="$RESULT_DIR/hyper_${repr}_nometric.pkl"
+    	if [[ ! -e "$HYPER_CACHE" ]]; then
+    	    echo "Did not find a hyperparameter cache for KNN with ${repr}, running hyperparameter tuning!"
+    	    run_cmd JKML -knn -repr "$repr" -nometric -train "$DATA_DIR/db_hyper_high.pkl" "$DATA_DIR/db_hyper_low.pkl" -monomers "$DATA_DIR/monomer_high.pkl" "$DATA_DIR/monomer_low.pkl" -par "$PARTITION" -time 04:00:00 -cpu "$CPUS" -varsout "$HYPER_CACHE" -hyper
+    	    # move to next representation
+			break 1
+    	fi
+	    for n_samples in "${N_VALUES[@]}"; do
+	        KNN_MODEL_PATH="$RESULT_DIR/knn_${i}_${repr}-nometric_${n_samples}.pkl"
+	        if [ -e "$KNN_MODEL_PATH" ]; then
+	            echo "Found trained k-NN model at $KNN_MODEL_PATH, not retraining!"
+		        continue
+	        fi
+	        echo "Submit k-NN job for chunk ${i} without metric learning and ${repr} representation, n=${n_samples}."
+			KNN_RESULTS="$RESULT_DIR/knn_${i}_${repr}-nometric_${n_samples}_trainout.pkl"
+	
+            run_cmd JKML -knn -repr "$repr" -nometric -train "$DATA_DIR/db_high_${i}_${n_samples}.pkl" "$DATA_DIR/db_low_${i}_${n_samples}.pkl" -monomers "$DATA_DIR/monomer_high.pkl" "$DATA_DIR/monomer_low.pkl" -test "$DATA_DIR/db_high_test${i}.pkl" "$DATA_DIR/db_low_test${i}.pkl" -par "$PARTITION" -time 02:00:00 -cpu "$CPUS" -varsout "$KNN_MODEL_PATH" -out "$KNN_RESULTS" -hyper-cache "$HYPER_CACHE"
+	    done
+	done
+done

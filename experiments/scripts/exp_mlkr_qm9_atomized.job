@@ -1,0 +1,86 @@
+#!/bin/bash
+# This script runs a CV experiment for k-NN replacement
+
+run_cmd() {
+if [ "$DEBUG" = true ]; then
+        echo "$@"
+    else
+        "$@"
+    fi
+}
+
+# DATA PREPROCESSING
+DATA_DIR="/home/seplauri/clusters2025/data/QM9_atomized"
+NUM_FOLDS=5
+CPUS=8
+PARTITION="q64,q48,q40"
+DEBUG=false
+N_VALUES=()
+MONOMER_DB=""
+REPRESENTATIONS=()
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in 
+        --cv-folds) NUM_FOLDS="$2"; shift;;
+        --cpu) CPUS="$2"; shift;;
+        -p|--par) PARTITION="$2"; shift;;
+        -n) DEBUG=true;;
+        -s|--samples)
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                N_VALUES+=("$1")
+                shift
+            done;;
+        -r|--repr)
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                REPRESENTATIONS+=("$1")
+                shift
+            done;;
+		-m|--monomers) MONOMER_DB="$2"; shift;;
+        --help) echo "Usage: exp_knn_learning_curve.sh --db <path_to_db> [-m <path_to_monomers>] --k <folds> --cpu <num_cpus> -p <partition> [-s|--samples] <sample counts> [-n]"; exit 0 ;;
+        *) echo "Unknown option: $1"; exit 1;;
+    esac
+    shift
+done
+
+if [[ ${#N_VALUES[@]} -eq 0 ]]; then
+	N_VALUES=(100 500 1000 5000 10000 15000 25000)
+fi
+if [[ ${#REPRESENTATIONS[@]} -eq 0 ]]; then
+    REPRESENTATIONS=("fchl")
+fi
+
+RESULT_DIR=$(realpath --canonicalize-missing "/home/seplauri/clusters2025/experiments/results/QM9_atomized")
+mkdir -p "$RESULT_DIR"
+
+# train MLKR on folds
+for repr in "${REPRESENTATIONS[@]}"; do
+
+    for ((i=0; i<NUM_FOLDS; i++)); do
+        for n_samples in "${N_VALUES[@]}"; do
+            MLKR_MODEL_PATH="$RESULT_DIR/qm9_mlkr_${i}_${repr}_${n_samples}.pkl"
+            if [ -e "$MLKR_MODEL_PATH" ]; then
+                echo "Found trained MLKR model at $MLKR_MODEL_PATH, not retraining!"
+                continue
+            fi
+			if ((n_samples > 10000 && n_samples <= 20000)) ; then
+				TIME="16:00:00"
+				KNN_CPUS=16
+                MEM=4000
+			elif ((n_samples > 20000 && n_samples <= 100000)) ; then
+				TIME="16:00:00"
+				KNN_CPUS=16
+                MEM=8000
+			else
+				TIME="08:00:00"
+				KNN_CPUS="$CPUS"
+                MEM=4000
+			fi
+            echo "Submit MLKR job for db chunk ${i} with ${repr} metric, n=${n_samples}."
+            MLKR_RESULTS="$RESULT_DIR/qm9_mlkr_${i}_${repr}_${n_samples}_trainout.pkl"
+            run_cmd JKML -mlkr -repr "$repr" -train "$DATA_DIR/db_${i}_${n_samples}.pkl" -test "$DATA_DIR/db_test${i}.pkl" -atoms "$DATA_DIR/atoms_${i}.pkl" -hyper-cache "/home/seplauri/clusters2025/data/QM9/repr_fchl.pkl" -par "$PARTITION" -time "$TIME" -cpu "$CPUS" -mem "$MEM" -varsout "$MLKR_MODEL_PATH" -out "$MLKR_RESULTS"
+        done
+    done
+done
+	

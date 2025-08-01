@@ -1,0 +1,19 @@
+#!/bin/bash -l
+#SBATCH --job-name=k-sensitivity
+#SBATCH -o experiments/logs/%A_k_sensitivity.log
+#SBATCH --partition=q64,q48,q40
+#SBATCH --mem=12G
+#SBATCH --cpus-per-task=16
+#SBATCH --time=12:00:00
+
+echo "========= Job started  at `date` =========="
+echo "Job started with arguments: $@"
+
+SRC_DIR=$1
+REPR=$2
+
+source "/home/seplauri/JKCS2.1/JKQC/JKCS/bin/activate"
+ml load python/3.11.1
+source "/home/seplauri/JKCS2.1/JKQC/JKCS/bin/activate"
+python3 experiments/k_sensitivity.py "$SRC_DIR" "$SRC_DIR" "$REPR"
+echo "========= Job finished at `date` =========="
