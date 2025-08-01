@@ -1,5 +1,5 @@
 #!/bin/bash
-# This script generates the datasets for the clusteromics I-V experiment
+# This script generates the datasets for the QM9 experiment
 
 run_cmd() {
 if [ "$DEBUG" = true ]; then
