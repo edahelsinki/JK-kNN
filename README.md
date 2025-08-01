@@ -4,4 +4,3 @@ This repository contains the code necessary to run the calculations presented in
 # TODO
 - further description
 - write instructions for running experiments
-- add python scripts for post processing
