@@ -11,8 +11,20 @@ if [ "$DEBUG" = true ]; then
 
 # DATA PREPROCESSING
 
-SOURCE_DIR="/home/seplauri/clusters2025/data/QM9_atomized"
-DATA_DIR="/home/seplauri/clusters2025/data/QM9_atomized"
+set -euo pipefail
+
+CURR_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+PROJECT_ROOT="$(dirname "$(dirname "$CURR_DIR")")"
+CONFIG="$PROJECT_ROOT/config.sh"
+# shellcheck source=/dev/null
+. "$CONFIG"
+
+if [[ ! -d "$ACDB_PATH" ]]; then
+  echo "ACDB_PATH is not a directory: $ACDB_PATH" >&2
+  exit 1
+fi
+SOURCE_DIR="$ACDB_PATH/QM9_atomized"
+DATA_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 CALL_DIR="$(pwd)"
 NUM_FOLDS=5
 HYPERTRAIN_SIZE=5000

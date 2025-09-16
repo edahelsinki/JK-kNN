@@ -10,9 +10,21 @@ if [ "$DEBUG" = true ]; then
 }
 
 # DATA PREPROCESSING
+set -euo pipefail
 
-SOURCE_DIR="/home/kubeckaj/ACDB/Articles/kubecka24_neural_network/Databases"
-DATA_DIR="/home/seplauri/clusters2025/data/SA-W_delta"
+CURR_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+PROJECT_ROOT="$(dirname "$(dirname "$CURR_DIR")")"
+CONFIG="$PROJECT_ROOT/config.sh"
+# shellcheck source=/dev/null
+. "$CONFIG"
+
+if [[ ! -d "$ACDB_PATH" ]]; then
+  echo "ACDB_PATH is not a directory: $ACDB_PATH" >&2
+  exit 1
+fi
+
+SOURCE_DIR="$ACDB_PATH/Articles/kubecka24_neural_network/Databases"
+DATA_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 NUM_FOLDS=5
 HYPERTRAIN_SIZE=5000
 N_VALUES=()
