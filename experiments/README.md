@@ -25,6 +25,7 @@ Articles/knattrup23_multiacid_multibase/ # clusteromics
 The datasets required for the QM9 and SA-W extrapolation calculations are included as part of this repository.
 
 Next, ensure that you have the [JKCS](https://jkcs.readthedocs.io/en/latest/) software package installed and configured to your setup, with a version higher than 2.1.
+Make sure to update the installation path to `config.sh` at the root of this repository.
 
 First, generate the datasets used in the calculations by calling
 ```
@@ -62,3 +63,8 @@ sbatch experiments/scripts/exp_k_sensitivity.job [source_dir] [representation]
 where `source_dir` has the results from the machine learning and `repr` is the desired representation.
 
 To recreate the uncertainty estimation analysis, first run the machine learning pipeline for $\Delta$-learning on SA-W clusters.
+Then, call
+```
+python3 experiments/uncertainty_estimation.py [source_dir] [save_dir] [representation]
+```
+to create the uncertainty estimation results.

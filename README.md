@@ -12,6 +12,7 @@ Preprint of the ExplainReduce paper
 
 # Requirements
 To run the calculations, a working and up-to-date installation of [JKCS](https://jkcs.readthedocs.io/en/latest/) (version 2.1 or higher) is needed. 
+Add the path to your installation to `config.sh`.
 
 For other dependencies (for plotting etc.), we recommend the [uv](https://docs.astral.sh/uv/) package manager.
 You can install the dependencies by running
