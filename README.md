@@ -25,7 +25,7 @@ pip3 install -r requirements.txt
 ```
 
 The datasets used are available at [ACDB](https://github.com/elmjonas/ACDB/tree/master).
-Note that the .job bash scripts expect particular file paths for the data; you will likely need to edit these to accomodate your personal setup.
+To recreate the calculations from scratch, add your local path for ACDB to `config.sh`.
 
 # Recreating calculations and included files 
 
