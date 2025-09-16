@@ -10,7 +10,7 @@ if [ "$DEBUG" = true ]; then
 }
 
 # DATA PREPROCESSING
-DATA_DIR="/home/seplauri/clusters2025/data/clusteromics_I-V_delta"
+DATA_DIR="/JK-kNN/data/clusteromics_I-V_delta"
 NUM_FOLDS=5
 CPUS=8
 PARTITION="q64,q48,q40"
@@ -53,52 +53,8 @@ if [[ ${#REPRESENTATIONS[@]} -eq 0 ]]; then
     REPRESENTATIONS=("krr" "krr19" "fchl" "fchl-kernel" "mbdf" "fchl-nometric" "mbdf-nometric")
 fi
 
-RESULT_DIR=$(realpath --canonicalize-missing "/home/seplauri/clusters2025/experiments/results/clusteromics_full")
+RESULT_DIR=$(realpath --canonicalize-missing "/JK-kNN/experiments/results/clusteromics_full")
 mkdir -p "$RESULT_DIR"
-
-# train KRR on folds
-TRAIN_KRR=false
-for repr in "${REPRESENTATIONS[@]}"; do
-    if [[ "$repr" == krr ]]; then
-		TRAIN_KRR=true
-		break
-	fi
-done
-
-for ((i=0; i<NUM_FOLDS; i++)); do
-	if [ "$TRAIN_KRR" = false ]; then
-		break
-	fi
-    for n_samples in "${N_VALUES[@]}"; do
-		HIGH_DB="$DATA_DIR/clusteromics_full_high_${i}_${n_samples}.pkl"
-		if [[ ! -e "$HIGH_DB" ]]; then
-			continue
-		fi
-
-        KRR_MODEL_PATH="$RESULT_DIR/clusteromics_full_krr_${i}_${n_samples}.pkl" 
-        if [ -e "$KRR_MODEL_PATH" ]; then
-            echo "Found trained KRR model at $KRR_MODEL_PATH, not retraining!"
-            continue
-        fi
-
-        echo "Submit KRR job for chunk ${i} (N=$n_samples)."
-        KRR_RESULTS="$RESULT_DIR/clusteromics_full_krr_${i}_${n_samples}_trainout.pkl"
-		if ((n_samples > 1000 && n_samples < 5000)) ; then
-			TIME="16:00:00"
-			KRR_CPUS=16
-            MEM=8000
-		elif ((n_samples >= 5000)) ; then
-			TIME="24:00:00"
-			KRR_CPUS=16
-            MEM=12000
-		else
-			TIME="08:00:00"
-			KRR_CPUS="$CPUS"
-            MEM=4000
-		fi
-        run_cmd JKML -qml -train "$DATA_DIR/clusteromics_full_high_${i}_${n_samples}.pkl" "$DATA_DIR/clusteromics_full_low_${i}_${n_samples}.pkl" -monomers "$DATA_DIR/monomer_high.pkl" "$DATA_DIR/monomer_low.pkl" -test "$DATA_DIR/clusteromics_full_high_test${i}.pkl" "$DATA_DIR/clusteromics_full_low_test${i}.pkl" -par "$PARTITION" -time "$TIME" -cpu "$KRR_CPUS" -mem "$MEM" -varsout "$KRR_MODEL_PATH" -out "$KRR_RESULTS"
-    done
-done
 
 # train KRR19 on folds
 TRAIN_KRR19=false
@@ -206,7 +162,7 @@ for repr in "${REPRESENTATIONS[@]}"; do
 				PARTITION="q64,q48,q40"
 			fi
             echo "Submit k-NN job for clusteromics_full chunk ${i} with ${repr} metric, n=${n_samples}."
-            run_cmd JKML -knn -repr "$repr" -train "$DATA_DIR/clusteromics_full_high_${i}_${n_samples}.pkl" "$DATA_DIR/clusteromics_full_low_${i}_${n_samples}.pkl" -monomers "$DATA_DIR/monomer_high.pkl" "$DATA_DIR/monomer_low.pkl" -test "$DATA_DIR/clusteromics_full_high_test${i}.pkl" "$DATA_DIR/clusteromics_full_low_test${i}.pkl" -par "$PARTITION" -time "$TIME" -cpu "$KNN_CPUS" -mem "$MEM" -varsout "$KNN_MODEL_PATH" -out "$KNN_RESULTS" -hyper-cache "$HYPER_CACHE"
+            run_cmd JKML -knn -repr "$repr" -train "$DATA_DIR/clusteromics_full_high_${i}_${n_samples}.pkl" "$DATA_DIR/clusteromics_full_low_${i}_${n_samples}.pkl" -monomers "$DATA_DIR/monomer_high.pkl" "$DATA_DIR/monomer_low.pkl" -test "$DATA_DIR/clusteromics_full_high_test${i}.pkl" "$DATA_DIR/clusteromics_full_low_test${i}.pkl" -par "$PARTITION" -time "$TIME" -cpu "$KNN_CPUS" -mem "$MEM" -varsout "$KNN_MODEL_PATH" -out "$KNN_RESULTS" -hyper-cache "$HYPER_CACHE" -subsample-mlkr
         done
     done
 done
@@ -256,3 +212,24 @@ for repr in "${REPRESENTATIONS[@]}"; do
 	done
 done
 
+# train MLKR on folds
+for repr in "${REPRESENTATIONS[@]}"; do
+	for stem in "${DB_STEMS[@]}"; do
+		# nometric values are handled below
+	    if [[ "$repr" == *nometric* ]]; then
+			continue
+		fi
+	    for ((i=0; i<NUM_FOLDS; i++)); do
+	        for n_samples in "${N_VALUES[@]}"; do
+	            MLKR_MODEL_PATH="$RESULT_DIR/${stem}_mlkr_${i}_${repr}_${n_samples}.pkl"
+	            if [ -e "$MLKR_MODEL_PATH" ]; then
+	                echo "Found trained MLKR model at $MLKR_MODEL_PATH, not retraining!"
+	                continue
+	            fi
+	            echo "Submit MLKR job for ${stem} chunk ${i} with ${repr} metric, n=${n_samples}."
+	            MLKR_RESULTS="$RESULT_DIR/${stem}_mlkr_${i}_${repr}_${n_samples}_trainout.pkl"
+	            run_cmd JKML -mlkr -repr "$repr" -train "$DATA_DIR/${stem}_high_${i}_${n_samples}.pkl" "$DATA_DIR/${stem}_low_${i}_${n_samples}.pkl" -monomers "$DATA_DIR/monomer_high.pkl" "$DATA_DIR/monomer_low.pkl" -test "$DATA_DIR/${stem}_high_test${i}.pkl" "$DATA_DIR/${stem}_low_test${i}.pkl" -par "$PARTITION" -time 08:00:00 -cpu "$CPUS" -varsout "$MLKR_MODEL_PATH" -out "$MLKR_RESULTS" -subsample-mlkr
+	        done
+	    done
+	done
+done

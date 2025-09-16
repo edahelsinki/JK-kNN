@@ -10,7 +10,9 @@ if [ "$DEBUG" = true ]; then
 }
 
 # DATA PREPROCESSING
-DATA_DIR="/home/seplauri/clusters2025/data/SA-W_delta_extra"
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+BASE_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+DATA_DIR="$BASE_DIR/data/SA-W_delta_extra"
 NUM_FOLDS=5
 CPUS=8
 PARTITION="q64,q48,q40"
@@ -52,7 +54,7 @@ if [[ ${#REPRESENTATIONS[@]} -eq 0 ]]; then
     REPRESENTATIONS=("krr" "fchl" "fchl-kernel" "mbdf" "fchl-nometric" "mbdf-nometric")
 fi
 
-RESULT_DIR=$(realpath --canonicalize-missing "/home/seplauri/clusters2025/experiments/results/SA-W_extrap")
+RESULT_DIR=$(realpath --canonicalize-missing "$BASE_DIR/experiments/results/SA-W_extrap")
 mkdir -p "$RESULT_DIR"
 
 # train KRR on folds
