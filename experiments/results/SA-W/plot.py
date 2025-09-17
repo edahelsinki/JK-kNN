@@ -1,3 +1,4 @@
+import sys
 from matplotlib.ticker import NullLocator, LogFormatterSciNotation, FuncFormatter
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
@@ -12,16 +13,20 @@ from ase.visualize.plot import plot_atoms
 from ase import Atoms
 from typing import Iterable
 from collections import defaultdict
-from .constants import *
-from paths import JKML_PATH
-import sys
 
-sys.path.append(JKML_PATH)
+path = Path(__file__).parent
+sys.path.append(str(path.parent.parent))
+from constants import *
+from paths import JKML_PATH
+
+sys.path.append(str(JKML_PATH))
 from src.data import substract_monomers
+
 
 path = Path(__file__).parent
 
 # Plot learning curves
+print("Start plotting learning curves.")
 width: float = 1.0
 aspect: float = 1.0
 cols: int = 1
@@ -72,7 +77,6 @@ for row_id, df in enumerate([df_direct, df_delta]):
     df_error.loc[df_error["ml_method"] == "KRR19", "ml_method"] = "KRR"
     df_error.loc[df_error["ml_method"] == "KRR", "metric"] = "KRR"
     if filter_extra:
-        print(df_error["identifier"].unique())
         df_error = df_error.loc[
             df_error["identifier"].isin(
                 [
@@ -137,6 +141,8 @@ for row_id, df in enumerate([df_direct, df_delta]):
     ax.xaxis.set_major_formatter(LogFormatterSciNotation())
 
     # Increase font size of x-axis tick labels
+    ax.set_xticks(ax.get_xticks())
+    ax.set_yticks(ax.get_yticks())
     ax.tick_params(axis="x", labelsize=14)  # Change 14 to your preferred size
     ax.set_yticklabels(ax.get_yticks(), size=14)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: str(int(x))))
@@ -150,8 +156,10 @@ for row_id, df in enumerate([df_direct, df_delta]):
         ax.set_title(r"$\Delta$-learning", size=14)
     fig.tight_layout()
 plt.savefig(path / "raw_sa-w_combined_error.pdf", dpi=300)
+print(f"Saved learning curves to {path / 'raw_sa-w_combined_error.pdf'}")
 
 # Plot times
+print("Start plotting time curves.")
 fig = plt.figure(constrained_layout=True)
 fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(10, 5))
 for row_id, df in enumerate([df_direct, df_direct]):
@@ -177,7 +185,6 @@ for row_id, df in enumerate([df_direct, df_direct]):
     df_time.loc[df_time["ml_method"] == "KRR19", "ml_method"] = "KRR"
     df_time.loc[df_time["ml_method"] == "KRR", "metric"] = "KRR"
     if filter_extra:
-        print(df_time["identifier"].unique())
         df_time = df_time.loc[
             df_time["identifier"].isin(
                 [
@@ -258,8 +265,10 @@ for row_id, df in enumerate([df_direct, df_direct]):
         ax.set_ylabel("Test CPU time (s)", size=14)
     fig.tight_layout()
 plt.savefig(path / "raw_sa-w_combined_time.pdf", dpi=300)
+print(f"Saved time curves to {path / 'raw_sa-w_combined_time.pdf'}")
 
 # Plot k-scaling
+print("Start plotting k sensitivity curves.")
 fnames = [f.name for f in path.glob("k_scaling_fchl*")]
 df_master = pd.DataFrame()
 for f in fnames:
@@ -300,9 +309,14 @@ axs[1].legend(
     title="Train set size", fontsize=14, title_fontsize=15, bbox_to_anchor=(1.01, 0.8)
 )
 axs[0].set_ylabel("Test set MAE (kcal/mol)", size=14)
+axs[0].set_yticks(axs[0].get_yticks())
 axs[0].set_yticklabels(axs[0].get_yticks(), size=14)
 axs[0].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: str(int(x))))
 for ax in axs:
+    # dummy set ticks to get rid of plt warning
+    ax.set_xticks(ax.get_xticks())
+    ax.set_yticks(ax.get_yticks())
+    # increase font size
     ax.set_xticklabels(ax.get_xticks(), size=14)
     ax.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: str(int(x))))
 fig.text(
@@ -310,8 +324,10 @@ fig.text(
 )
 fig.tight_layout()
 plt.savefig(path / "saw_delta_k_scaling.pdf", dpi=300, bbox_inches="tight")
+print(f"Saved k sensitivity curves to {path / 'saw_delta_k_scaling.pdf'}")
 
 # recreate UE plots
+print("Start plotting uncertainty analysis curves.")
 unc = pd.read_pickle(path / "uncertainty_fchl.pkl")
 unc = unc.loc[unc["n_train"] == 13000]
 unc = unc.loc[unc["job_id"] == 0]
@@ -401,12 +417,13 @@ ax_right.tick_params(axis="y", labelsize=14)
 ax_right.set_xlabel("Theoretical quantiles", fontdict={"size": 14})
 ax_right.set_ylabel("Empirical quantiles", fontdict={"size": 14})
 fig.savefig(path / "uncertainty_base.pdf", dpi=150)
+print(f"Saved uncertainty plots to {path / 'uncertainty_base.pdf'}")
 
 # plot nearest neighbours
+print("Start plotting nearest neighbours examples.")
 no_metric = False
-VARS_PKL = Path(
-    "/home/seplauri/Documents/edahelsinki/clusters2025/experiments/results/SA-W_delta/saw_delta_knn_0_fchl_13000.pkl"
-)
+VARS_PKL = path / "saw_delta_knn_0_fchl_13000.pkl"
+
 Qrepresentation = "fchl"
 with open(VARS_PKL, "rb") as f:
     if no_metric:
@@ -435,6 +452,7 @@ with open(VARS_PKL, "rb") as f:
 knn_params["metric"] = mlkr.get_metric()
 knn = KNeighborsRegressor(**knn_params)
 knn.fit(X_train, Y_train)
+print("\tLoaded k-nn model.")
 
 
 def _generate_fchl19(
@@ -496,6 +514,7 @@ with open(TRAIN_PATH, "rb") as f:
     df_train = pd.read_pickle(f)
 df_train.head(10)
 Xdf = calculate_representation(Qrepresentation, df_train["xyz"]["structure"].values)
+print("\tLoaded raw train and test data.")
 
 plot_dict = {
     l: {"y_pred": [], "structures": [], "error": -1, "y_true": -1} for l in letters
@@ -524,7 +543,8 @@ for l, ei in zip(letters, knn_examples):
             X_train[ki, :], calculate_representation(Qrepresentation, [train_str])
         )
         plot_dict[l]["structures"].append(train_str)
-        plot_dict[l]["y"].append(Y_train[ki] * HARTREE_TO_KCALM)
+        plot_dict[l]["y_pred"].append(Y_train[ki] * HARTREE_TO_KCALM)
+print("\tProcessed data for plotting.")
 
 
 def draw_structure_table(
@@ -569,13 +589,10 @@ def draw_structure_table(
     if len(structures) < 6 or len(y_pred) < 6:
         raise ValueError("Need at least 6 structures and 6 y-values.")
 
-    # Use only the first six per your spec
     structures6 = structures[:6]
     y6 = y_pred[:6]
 
-    # Keep constrained layout, but tighten it
     fig = plt.figure(figsize=figsize, constrained_layout=True)
-    # Fine control over spacing and padding:
     fig.set_constrained_layout_pads(
         h_pad=row_pad,
         w_pad=0.02,  # pad in inches
@@ -583,7 +600,6 @@ def draw_structure_table(
         wspace=0.02,  # fractional spacing
     )
 
-    # Height ratios: header (small), plots (large), y row (small)
     gs = GridSpec(
         nrows=3,
         ncols=6,
@@ -592,7 +608,6 @@ def draw_structure_table(
         width_ratios=[1, 1, 1, 1, 1, 1],
     )
 
-    # --- Title (no bounding box) ---
     fig.suptitle(
         f"Structure {title_id} (error = {error_value:.2f} {units})", y=0.99, fontsize=14
     )
@@ -656,11 +671,13 @@ def draw_structure_table(
 for l in letters:
     fig = draw_structure_table(
         plot_dict[l]["structures"],
-        plot_dict[l]["y"],
         plot_dict[l]["y_pred"],
+        plot_dict[l]["y_true"],
         l,
         plot_dict[l]["error"],
         row_hspace=0.001,
         row_pad=0.001,
     )
     fig.savefig(path / f"nn5_raw_{l}.pdf", dpi=150)
+    print(f"\tSaved NNs for {l} to {path / f'nn5_raw_{l}.pdf'}.")
+print("Done.")

@@ -1,5 +1,3 @@
-ACDB_PATH="absolute_path_to_ACDB"
-export ACDB_PATH
+export ACDB_PATH="absolute_path_to_ACBD"
 
-JKCS_PATH="absolute_path_to_JKCS"
-export JKCS_PATH
+export JKCS_PATH="absolute_path_JKCS"

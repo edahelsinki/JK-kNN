@@ -7,7 +7,6 @@ from dotenv import dotenv_values
 CONFIG = Path(__file__).parent.parent / "config.sh"
 cfg = dotenv_values(CONFIG)
 
-
 ACDB_PATH = cfg.get("ACDB_PATH")
 
 # JKML paths
