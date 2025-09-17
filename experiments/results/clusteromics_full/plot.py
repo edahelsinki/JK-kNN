@@ -55,7 +55,6 @@ def plot_error_and_times(
     df_time.loc[df_time["ml_method"] == "KRR19", "ml_method"] = "KRR"
     df_time.loc[df_time["ml_method"] == "KRR", "metric"] = "KRR"
     if filter_extra:
-        print(df_error["identifier"].unique())
         df_error = df_error.loc[
             df_error["identifier"].isin(
                 [
