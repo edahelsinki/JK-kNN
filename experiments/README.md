@@ -65,6 +65,6 @@ where `source_dir` has the results from the machine learning and `repr` is the d
 To recreate the uncertainty estimation analysis, first run the machine learning pipeline for $\Delta$-learning on SA-W clusters.
 Then, call
 ```
-python3 experiments/uncertainty_estimation.py [source_dir] [save_dir] [representation]
+sbatch experiments/scripts/exp_uncertainty.job [source_dir] [representation]
 ```
 to create the uncertainty estimation results.
