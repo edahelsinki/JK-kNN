@@ -5,6 +5,7 @@ import seaborn as sns
 from pathlib import Path
 
 
+print("Start plotting learning curves.")
 path = Path(__file__).parent
 df_extra = pd.read_pickle(path / "learning_curve.pkl")
 df_delta = pd.read_pickle(path.parent / "SA-W/delta_learning_curve.pkl")
@@ -54,7 +55,6 @@ for df, label in [(df_delta, "delta"), (df_extra, "extra")]:
     df_error.loc[df_error["ml_method"] == "KRR19", "ml_method"] = "KRR"
     df_error.loc[df_error["ml_method"] == "KRR", "metric"] = "KRR"
     if filter_extra:
-        print(df_error["identifier"].unique())
         df_error = df_error.loc[
             df_error["identifier"].isin(
                 ["KNN (FCHL19)", "MLKR (FCHL19)", "KRR19 (FCHL19)"]
@@ -133,3 +133,4 @@ ax_handles, ax_labels = ax.get_legend_handles_labels()
 ax.legend(ax_handles, ax_labels, bbox_to_anchor=(-0.2, 1.0))
 fig.tight_layout()
 plt.savefig(path / "raw_saw_extrap.pdf", dpi=300)
+print(f"Saved learning curves to {path / 'raw_saw_extrap.pdf'}")

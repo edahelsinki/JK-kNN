@@ -5,6 +5,7 @@ import seaborn as sns
 from pathlib import Path
 
 
+print("Start plotting learning curves.")
 path = Path(__file__).parent
 df = pd.read_pickle(path / "learning_curve.pkl")
 width: float = 1.0
@@ -129,3 +130,4 @@ ax_handles, ax_labels = ax.get_legend_handles_labels()
 ax.legend(ax_handles, ax_labels, bbox_to_anchor=(-0.2, 1.0))
 fig.tight_layout()
 plt.savefig(path / "raw_qm9.pdf", dpi=300)
+print(f"Saved learning curves to {path / 'raw_qm9.pdf'}")

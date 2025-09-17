@@ -212,7 +212,9 @@ def plot_error_and_times(
     fig.tight_layout()
 
 
+print("Start plotting learning curves.")
 path = Path(__file__).parent
 df = pd.read_pickle(path / "learning_curve.pkl")
 plot_error_and_times(df)
 plt.savefig(path / "raw_clusteromics.pdf", dpi=300)
+print(f"Saved learning curves to {path / 'raw_clusteromics.pdf'}")
